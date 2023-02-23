@@ -88,6 +88,7 @@ if __name__ == '__main__':
     parser.add_argument('--fc_hidden_size', type=int, default=512)
     parser.add_argument('--pool_size', type=int, default=60)
     parser.add_argument('--transformer_depth', type=int, default=6)
+    parser.add_argument('--layer_num', default=2, type=int, help='the number of res blocks to use')
 
     args = parser.parse_args()
     torch.multiprocessing.set_start_method('spawn')

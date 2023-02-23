@@ -100,7 +100,13 @@ def get_positional_encodings(B, N, intrinsics=None):
     '''
     h,w = 48,64
     if N == 24*24:
-        h,w = 24,24
+        h, w = 24, 24
+    elif N == 144:
+        h, w = 12, 12
+    elif N == 36:
+        h, w = 6, 6
+    elif N == 48*48:
+        h, w = 48, 48
     elif N != 48*64:
         print('unexpected resolution for positional encoding')
         assert(False)

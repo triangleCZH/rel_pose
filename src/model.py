@@ -17,11 +17,18 @@ class ViTEss(nn.Module):
         if 'noess' in args and args.noess != '':
             self.noess = args.noess
         self.total_num_features = 192
-        self.feature_resolution = (24, 24)
+        self.num_layers = args.layer_num
+        base_resnet_resolution = 112
+        resnet_resolution = base_resnet_resolution // (2 ** self.num_layers)
+        base_resnet_dim = 32
+        resnet_dim  = base_resnet_dim  * (2 ** self.num_layers)
+        base_final_resolution = 96
+        final_resolution = base_final_resolution // (2 ** self.num_layers)
+        self.feature_resolution = (final_resolution, final_resolution)
         self.num_images = 2
         self.pose_size = 7
         self.num_patches = self.feature_resolution[0] * self.feature_resolution[1]
-        extractor_final_conv_kernel_size = max(1, 28-self.feature_resolution[0]+1)
+        extractor_final_conv_kernel_size = max(1, resnet_resolution-self.feature_resolution[0]+1)
         self.pool_feat1 = min(96, 4 * args.pool_size)
         self.pool_feat2 = args.pool_size
         self.H2 = args.fc_hidden_size
@@ -30,7 +37,7 @@ class ViTEss(nn.Module):
         self.flatten = nn.Flatten(0,1)
         self.resnet = models.resnet18(pretrained=True) # this will be overridden if we are loading pretrained model
         self.resnet.fc = nn.Identity()
-        self.extractor_final_conv = ResidualBlock(128, self.total_num_features, 'batch', kernel_size=extractor_final_conv_kernel_size)
+        self.extractor_final_conv = ResidualBlock(resnet_dim, self.total_num_features, 'batch', kernel_size=extractor_final_conv_kernel_size)
 
         self.fusion_transformer = None
         if args.fusion_transformer:
@@ -45,7 +52,7 @@ class ViTEss(nn.Module):
 
             self.transformer_depth = args.transformer_depth
             self.fusion_transformer.blocks = self.fusion_transformer.blocks[:args.transformer_depth]
-            self.fusion_transformer.patch_embed = nn.Identity()
+            self.fusion_transformer.patch_embed = nn.Identity() # FIXME: embed is identity?
             self.fusion_transformer.head = nn.Identity() 
             self.fusion_transformer.cls_token = None
             self.pos_encoding = None
@@ -118,38 +125,45 @@ class ViTEss(nn.Module):
         images = images.sub_(mean[:, None, None]).div_(std[:, None, None])
 
         if intrinsics is not None:
+            # update intrinsics for the reshaped images
             intrinsics = self.update_intrinsics(images.shape, intrinsics)
 
         # for resnet, we need 224x224 images
         input_images = self.flatten(images)
-        input_images = F.interpolate(input_images, size=224)
+        input_images = F.interpolate(input_images, size=224) # FIXME: this part reshape image and do not keep scale ratio
 
         x = self.resnet.conv1(input_images)
         x = self.resnet.bn1(x)
         x = self.resnet.relu(x)
         x = self.resnet.maxpool(x) 
-        x = self.resnet.layer1(x) # 64, 56, 56
-        x = self.resnet.layer2(x) # 128, 28, 28       
+        x = self.resnet.layer1(x) # 2, 64, 56, 56
+        if self.num_layers >= 2:
+            x = self.resnet.layer2(x) # 2, 128, 28, 28     
+        if self.num_layers >= 3:
+            x = self.resnet.layer3(x) # 2, 256, 14, 14
+        if self.num_layers >= 4:
+            x = self.resnet.layer4(x) # 2, 512, 7, 7    
         
         x = self.extractor_final_conv(x) # 192, 24, 24 
-
-        x = x.reshape([input_images.shape[0], -1, self.num_patches])
+        x = x.reshape([input_images.shape[0], -1, self.num_patches]) # 2, 192, 24 * 24
         if self.fusion_transformer is None:
             features = x[:,:self.total_num_features//2]
         else:
             features = x[:,:self.total_num_features]
-        features = features.permute([0,2,1])
+        features = features.permute([0,2,1]) 
 
         return features, intrinsics
     
     def normalize_preds(self, Gs, pose_preds, inference):
+        # initialize SE3 object without modifying pose
         pred_out_Gs = SE3(pose_preds)
         
-        normalized = pred_out_Gs.data[:,:,3:].norm(dim=-1).unsqueeze(2)
+        normalized = pred_out_Gs.data[:,:,3:].norm(dim=-1).unsqueeze(2) # (1, 2, 7) -> (1, 2) -> (1, 2, 1)
         eps = torch.ones_like(normalized) * .01
         pred_out_Gs_new = SE3(torch.clone(pred_out_Gs.data))
+        # protected normalization
         pred_out_Gs_new.data[:,:,3:] = pred_out_Gs.data[:,:,3:] / torch.max(normalized, eps)
-        these_out_Gs = SE3(torch.cat([Gs[:,:1].data, pred_out_Gs_new.data[:,1:]], dim=1))
+        these_out_Gs = SE3(torch.cat([Gs[:,:1].data, pred_out_Gs_new.data[:,1:]], dim=1)) # (1, 2, 7)
             
         if inference:
             out_Gs = these_out_Gs.data[0].cpu().numpy()
@@ -169,6 +183,7 @@ class ViTEss(nn.Module):
         if self.fusion_transformer is not None:
             x = features[:,:,:self.total_num_features]
             x = self.fusion_transformer.patch_embed(x)
+            # pos_embed is [1, 24 * 24, 192], has same 192 feature dimensions
             x = x + self.fusion_transformer.pos_embed
             x = self.fusion_transformer.pos_drop(x)
 

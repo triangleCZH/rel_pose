@@ -57,11 +57,20 @@ def train(gpu, args):
     model.train()
         
     # unused layers
-    for param in model.resnet.layer4.parameters():
-        param.requires_grad = False
+    if args.layer_num < 4:
+        print("Disable resnet layer4")
+        for param in model.resnet.layer4.parameters():
+            param.requires_grad = False
 
-    for param in model.resnet.layer3.parameters():
-        param.requires_grad = False
+    if args.layer_num < 3:
+        print("Disable resnet layer3")
+        for param in model.resnet.layer3.parameters():
+            param.requires_grad = False
+
+    if args.layer_num < 2:
+        print("Disable resnet layer2")
+        for param in model.resnet.layer2.parameters():
+            param.requires_grad = False
 
     if not args.no_ddp:
         model = DDP(model, device_ids=[gpu], find_unused_parameters=False)
@@ -229,6 +238,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpus', type=int, default=4)
     parser.add_argument('--ckpt', help='checkpoint to restore')
     parser.add_argument('--name', default='bla', help='name your experiment')
+    parser.add_argument('--layer_num', default=2, type=int, help='the number of res blocks to use')
     # data
     parser.add_argument("--datapath")
     parser.add_argument("--image_size", default=[384,512])
@@ -286,7 +296,7 @@ if __name__ == '__main__':
         train(args.gpus, args)
     else:
         os.environ['MASTER_ADDR'] = 'localhost'
-        os.environ['MASTER_PORT'] = '12356'
+        os.environ['MASTER_PORT'] = '12360'
         args.world_size = args.gpus
         mp.spawn(train, nprocs=args.gpus, args=(args,))
     
