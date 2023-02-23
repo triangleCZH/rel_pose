@@ -127,7 +127,6 @@ class ViTEss(nn.Module):
         if intrinsics is not None:
             # update intrinsics for the reshaped images
             intrinsics = self.update_intrinsics(images.shape, intrinsics)
-
         # for resnet, we need 224x224 images
         input_images = self.flatten(images)
         input_images = F.interpolate(input_images, size=224) # FIXME: this part reshape image and do not keep scale ratio
@@ -179,14 +178,12 @@ class ViTEss(nn.Module):
 
         features, intrinsics = self.extract_features(images, intrinsics)
         B, _, _, _, _ = images.shape
-
         if self.fusion_transformer is not None:
             x = features[:,:,:self.total_num_features]
             x = self.fusion_transformer.patch_embed(x)
             # pos_embed is [1, 24 * 24, 192], has same 192 feature dimensions
             x = x + self.fusion_transformer.pos_embed
             x = self.fusion_transformer.pos_drop(x)
-
             for layer in range(self.transformer_depth):
                 x = self.fusion_transformer.blocks[layer](x, intrinsics=intrinsics)
 

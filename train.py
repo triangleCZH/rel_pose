@@ -238,7 +238,6 @@ if __name__ == '__main__':
     parser.add_argument('--gpus', type=int, default=4)
     parser.add_argument('--ckpt', help='checkpoint to restore')
     parser.add_argument('--name', default='bla', help='name your experiment')
-    parser.add_argument('--layer_num', default=2, type=int, help='the number of res blocks to use')
     # data
     parser.add_argument("--datapath")
     parser.add_argument("--image_size", default=[384,512])
@@ -257,6 +256,7 @@ if __name__ == '__main__':
     parser.add_argument('--fc_hidden_size', type=int, default=512)
     parser.add_argument('--pool_size', type=int, default=60)
     parser.add_argument('--transformer_depth', type=int, default=6)
+    parser.add_argument('--layer_num', default=2, type=int, help='the number of res blocks to use')
 
     args = parser.parse_args()
     
@@ -296,7 +296,7 @@ if __name__ == '__main__':
         train(args.gpus, args)
     else:
         os.environ['MASTER_ADDR'] = 'localhost'
-        os.environ['MASTER_PORT'] = '12360'
+        os.environ['MASTER_PORT'] = '12362'
         args.world_size = args.gpus
         mp.spawn(train, nprocs=args.gpus, args=(args,))
     

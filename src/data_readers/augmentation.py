@@ -33,6 +33,5 @@ class RGBDAugmentor:
         yidx = np.array([1,3])
         intrinsics[:,xidx] = scalex * intrinsics[:,xidx]
         intrinsics[:,yidx] = scaley * intrinsics[:,yidx]
-            
         images = F.interpolate(images, size=self.reshape_size)
         return images, poses, intrinsics
